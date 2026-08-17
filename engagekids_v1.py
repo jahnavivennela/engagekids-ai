@@ -3,7 +3,13 @@ import streamlit as st
 from observation import observation_tab
 from learning_story import learning_story_tab
 from story_generator import story_generator_tab
-from worksheet_generator import worksheet_tab
+from worksheet_generator import worksheet_tab, get_week_key
+from ui_theme import apply_theme, section_divider
+from milestones_data import AGE_BANDS, milestones_summary_text
+from activity_db import (
+    init_activity_tables, save_quick_activity, get_recent_quick_activity_names,
+    save_weekly_experiences, get_recent_experience_names,
+)
 from db import init_db, add_child, get_children, get_child, add_observation, get_observations
 
 # Setup
@@ -12,6 +18,7 @@ client = Groq(api_key=api_key)
 
 # Initialize the database (safe to call every run — CREATE TABLE IF NOT EXISTS)
 init_db()
+init_activity_tables()
 
 # Page config
 st.set_page_config(
@@ -30,6 +37,9 @@ hide_streamlit_style = """
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
+# Apply the shared color palette, card styling, dividers, and watermark
+apply_theme()
+
 # Header
 st.markdown(
     """
@@ -45,341 +55,304 @@ st.markdown(
 st.markdown("---")
 
 # ==========================================
-# CHILD SELECTOR (everything below can now save to a specific child)
+# CHILD SELECTOR (used by Child History below)
 # ==========================================
 
-st.subheader("👤 Select Child")
+with st.container(border=True):
+    st.subheader("👤 Select Child")
 
-children = get_children()
-child_names = {c["name"]: c["id"] for c in children}
+    children = get_children()
+    child_names = {c["name"]: c["id"] for c in children}
 
-col_a, col_b = st.columns([2, 1])
-with col_a:
-    selected_name = st.selectbox(
-        "Choose a child (or add a new one)",
-        options=["— None selected —"] + list(child_names.keys()) + ["+ Add new child"]
-    )
+    col_a, col_b = st.columns([2, 1])
+    with col_a:
+        selected_name = st.selectbox(
+            "Choose a child (or add a new one)",
+            options=["— None selected —"] + list(child_names.keys()) + ["+ Add new child"]
+        )
 
-child_id = None
-child_record = None
+    child_id = None
+    child_record = None
 
-if selected_name == "+ Add new child":
-    with st.form("add_child_form"):
-        new_name = st.text_input("Child's name")
-        new_age = st.selectbox("Age group", ["Babies 0-1 years", "Toddlers 1-3 years", "Preschool 3-5 years"])
-        new_interests = st.text_input("Interests (comma separated, e.g. dinosaurs, drawing, running)")
-        submitted = st.form_submit_button("Save child")
-        if submitted and new_name:
-            child_id = add_child(new_name, new_age, new_interests)
-            st.success(f"Added {new_name}")
+    if selected_name == "+ Add new child":
+        with st.form("add_child_form"):
+            new_name = st.text_input("🧒 Child's name")
+            new_age = st.selectbox("🎂 Age group", AGE_BANDS)
+            new_interests = st.text_input("⭐ Interests (comma separated, e.g. dinosaurs, drawing, running)")
+            submitted = st.form_submit_button("Save child")
+            if submitted and new_name:
+                child_id = add_child(new_name, new_age, new_interests)
+                st.success(f"Added {new_name}")
+                st.rerun()
+
+    elif selected_name != "— None selected —":
+        child_id = child_names[selected_name]
+        child_record = get_child(child_id)
+
+    if child_id is None:
+        st.info("Select or add a child above to build their saved history below.")
+    else:
+        st.caption(f"Working with: **{selected_name}** ({child_record['age_group']}) — interests: {child_record['interests'] or 'not set'}")
+
+section_divider()
+
+# ==========================================
+# QUICK ACTIVITY SUGGESTER
+# A very short filler activity for a few minutes — NOT a full learning
+# experience, no EYLF write-up, 1-2 materials max, not tied to a specific
+# child, and never feeds into Parent Communication below.
+# ==========================================
+
+with st.container(border=True):
+    st.subheader("⚡ Quick Activity Suggester")
+    st.caption("A fast, dead-simple activity to re-engage the group for a few minutes — "
+               "not a structured learning experience. Repeats are fine; these aren't tracked or saved per child.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        quick_age_group = st.selectbox("🎂 Age group", AGE_BANDS, key="quick_age_group")
+    with col2:
+        quick_mood = st.selectbox(
+            "😊 Mood right now",
+            ["Energetic and active", "Calm and focused", "Restless and unsettled", "Tired and low energy"],
+            key="quick_mood",
+        )
+
+    def _extract_activity_name(result_text):
+        first_line = result_text.splitlines()[0]
+        if first_line.upper().startswith("ACTIVITY:"):
+            return first_line.split(":", 1)[1].strip()
+        return ""
+
+    def _generate_quick_activity():
+        # Avoid anything used for this age group in the last ~90 days, not just the last one.
+        avoid_names = get_recent_quick_activity_names(quick_age_group, days=90)
+
+        system_prompt = (
+            "You suggest VERY QUICK, dead-simple filler activities to re-engage a group of children "
+            "for a few minutes when an educator is busy, tired, or between planned activities. This is "
+            "NOT a structured learning experience — no EYLF write-up, no elaborate setup. Use at most "
+            "1-2 common materials, or none at all (e.g. a running game, clapping game, simple "
+            "call-and-response, throwing/catching). Base it only on what's realistic for this age using "
+            "the milestones given — do not invent skills beyond them."
+        )
+        prompt = f"""Age group: {quick_age_group}
+Developmental milestones for this age (base the activity on these):
+{milestones_summary_text(quick_age_group)}
+
+Mood right now: {quick_mood}
+{"Activities already used recently for this age group — do NOT repeat any of these: " + "; ".join(avoid_names) if avoid_names else ""}
+
+Give ONE very quick activity, genuinely different from the ones listed above. Reply in EXACTLY this format, nothing else:
+ACTIVITY: <name>
+HOW: <one plain sentence>
+MATERIALS: <1-2 items max, or 'None needed'>"""
+        resp = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
+            max_tokens=120,
+        )
+        result_text = resp.choices[0].message.content.strip()
+        save_quick_activity(quick_age_group, _extract_activity_name(result_text))
+        return result_text
+
+    if st.button("⚡ Suggest Quick Activity", type="primary"):
+        with st.spinner("Thinking of something quick..."):
+            st.session_state["quick_activity_result"] = _generate_quick_activity()
+
+    if "quick_activity_result" in st.session_state:
+        st.info(st.session_state["quick_activity_result"])
+        st.caption("Not feeling it? This one's now logged as recently used, so trying again will skip it and anything else from the last ~3 months.")
+        if st.button("🔄 Try another one"):
+            with st.spinner("Trying another..."):
+                st.session_state["quick_activity_result"] = _generate_quick_activity()
             st.rerun()
 
-elif selected_name != "— None selected —":
-    child_id = child_names[selected_name]
-    child_record = get_child(child_id)
-
-if child_id is None:
-    st.info("Select or add a child above to generate a personalised parent message and build their saved history.")
-else:
-    st.caption(f"Working with: **{selected_name}** ({child_record['age_group']}) — interests: {child_record['interests'] or 'not set'}")
-
-st.markdown("---")
+section_divider()
 
 # ==========================================
-# ACTIVITY SUGGESTER
+# HOME EXTENSION MESSAGE (generic — for the whole group, not personalised)
+# Photos/day-to-day updates go out separately via WhatsApp; this is only
+# for a short, copy-paste, no-names message with take-home ideas.
 # ==========================================
 
-col1, col2 = st.columns(2)
+with st.container(border=True):
+    st.subheader("🏠 Home Extension Message")
+    st.caption("A short, generic, copy-paste message for all families — no child names, "
+                "nothing personalised. Day-to-day photos/updates still go out separately via WhatsApp.")
 
-with col1:
-    age_group = st.selectbox(
-        "Age group",
-        ["Babies 0-1 years", "Toddlers 1-3 years", "Preschool 3-5 years"]
+    activity_or_theme = st.text_area(
+        "✏️ What did the group do today (activity or theme)?",
+        key="home_ext_input",
+        placeholder="e.g. Water play and pouring/measuring with cups and jugs",
     )
-    mood = st.selectbox(
-        "Current mood of children",
-        ["Energetic and active", "Calm and focused", "Restless and unsettled", "Tired and low energy"]
-    )
-
-with col2:
-    theme = st.text_input("Current theme (e.g. dental week, nature, transport)")
-    time_available = st.selectbox(
-        "Time available",
-        ["15 minutes", "30 minutes", "45 minutes", "1 hour"]
+    home_ext_languages = st.multiselect(
+        "🌍 Translate to (optional)",
+        ["Hindi", "Spanish", "Arabic", "Mandarin", "Vietnamese", "French"],
+        key="home_ext_languages",
     )
 
-resources = st.multiselect(
-    "Available resources",
-    ["Art supplies", "Outdoor space", "Water play", "Books", "Music", "Construction toys", "Sensory materials", "Kitchen items"]
-)
+    if st.button("Generate Home Message", type="primary"):
+        with st.spinner("Generating..."):
+            home_prompt = f"""Today's group activity/theme: {activity_or_theme}
 
-if st.button("🌟 Suggest Activity", type="primary"):
+Write a SHORT, GENERIC message for early childhood educators to copy-paste and send to ALL families in
+the room — do not use any child's name or personalise it to one child. Format:
 
-    with st.spinner("Generating activity..."):
+MESSAGE:
+1-2 sentence intro about today's activity/theme, written generically for the whole group.
 
-        system_prompt = """You are an expert early childhood educator with deep knowledge of the Early Years Learning Framework (EYLF) Version 2.0 Australia.
-        When suggesting activities:
-        - Always specify which EYLF outcomes the activity addresses (Identity, Community, Wellbeing, Learning, Communication)
-        - Include 3 open ended questions educators can ask during the activity
-        - Keep instructions simple and practical
-        - Use low cost materials ECE centres typically have
-        - Consider the specific developmental stage of the age group
-        - Make the activity adaptable for different ability levels"""
+TRY AT HOME (3 ideas):
+Three short, simple household-based ideas any parent could do that reinforce the same skill area —
+generic, not tied to any specific child's interests.
 
-        prompt = f"""Suggest one engaging activity for {age_group} children.
-        Current mood: {mood}
-        Weekly theme: {theme if theme else 'no specific theme'}
-        Time available: {time_available}
-        Available resources: {', '.join(resources) if resources else 'standard ECE materials'}
-
-        Format your response as:
-
-        ACTIVITY NAME:
-
-        WHY THIS WORKS RIGHT NOW:
-
-        MATERIALS NEEDED:
-
-        STEP BY STEP:
-
-        EYLF OUTCOMES ADDRESSED:
-
-        OPEN ENDED QUESTIONS TO ASK:
-
-        IF CHILDREN LOSE INTEREST:"""
-
-        message = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        activity_result = message.choices[0].message.content
-
-        st.success("Activity generated!")
-        st.markdown(activity_result)
-
-        # Keep this available so the Parent Communication section below can reuse it
-        st.session_state["last_activity_text"] = activity_result
-
-        if child_id is not None:
-            add_observation(
-                child_id=child_id,
-                activity=activity_result,
-                observation_text=f"Mood: {mood}, Theme: {theme}, Time: {time_available}",
+{"Also translate the MESSAGE section into: " + ", ".join(home_ext_languages) if home_ext_languages else ""}
+"""
+            home_message = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "You write short, warm, generic educator-to-parent messages for early childhood centres. Never personalise to a specific child."},
+                    {"role": "user", "content": home_prompt},
+                ],
             )
-            st.caption(f"✅ Saved to {selected_name}'s record")
+            st.success("Ready to copy and send!")
+            st.markdown(home_message.choices[0].message.content)
 
-# ==========================================
-# PARENT COMMUNICATION (now child-aware + gives follow-up + home-chore suggestions)
-# ==========================================
-
-st.markdown("<br>", unsafe_allow_html=True)
-st.divider()
-st.markdown("<br>", unsafe_allow_html=True)
-st.subheader("📝 Parent Communication Generator")
-
-if child_id is not None:
-    st.caption(f"Generating for: **{selected_name}**")
-else:
-    st.warning("No child selected — select one above so this message and its suggestions get saved to their record.")
-
-default_activity_text = st.session_state.get("last_activity_text", "")
-activity_done = st.text_area(
-    "What did the child do today? Describe simply:",
-    value=default_activity_text if default_activity_text else "",
-    help="You can also just paste in the activity generated above, or describe it in your own words."
-)
-
-languages = st.multiselect(
-    "Translate to (select one or more)",
-    ["Hindi", "Spanish", "Arabic", "Mandarin", "Vietnamese", "French"],
-    key="parent_comm_languages"
-)
-
-
-def extract_section(text, start_marker, end_markers):
-    """Pulls the text between start_marker and whichever end_marker comes first."""
-    if start_marker not in text:
-        return ""
-    chunk = text.split(start_marker, 1)[1]
-    end_positions = [chunk.find(m) for m in end_markers if chunk.find(m) != -1]
-    if end_positions:
-        chunk = chunk[:min(end_positions)]
-    return chunk.strip(" \n:-")
-
-
-if st.button("Generate Parent Message", type="primary"):
-
-    with st.spinner("Generating message..."):
-
-        child_context = ""
-        if child_record:
-            child_context = f"The child's name is {child_record['name']}, age group {child_record['age_group']}, known interests: {child_record['interests'] or 'not specified'}."
-
-        comm_prompt = f"""{child_context}
-        Today's activity/observation: {activity_done}
-
-        Write a response for the educator with these exact sections:
-
-        PARENT MESSAGE:
-        A warm, professional message to the parent explaining what the child did and what they're developing developmentally, in plain language suitable for a parent with no ECE background.
-
-        TRY THIS AT HOME:
-        One simple activity the parent can do at home that repeats or reinforces the same skill.
-
-        BUILD ON IT NEXT:
-        One related follow-up activity (a step up in challenge) that extends the same skill area further.
-
-        INVOLVE THEM IN A HOUSEHOLD TASK:
-        One everyday household chore or task the parent can involve the child in that uses the same skill (e.g. if it's hand-eye coordination, something like helping set the table or sorting laundry by color).
-
-        {"Also provide the PARENT MESSAGE section translated into: " + ", ".join(languages) if languages else ""}
-        """
-
-        comm_message = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "You are an expert early childhood educator who writes warm, professional, practical parent communications grounded in child development."},
-                {"role": "user", "content": comm_prompt}
-            ]
-        )
-
-        comm_result = comm_message.choices[0].message.content
-
-        st.success("Message generated!")
-        st.markdown(comm_result)
-
-        # Pull out the "try this at home" + "build on it" + "household task" bits separately
-        home_bits = []
-        for label, markers in [
-            ("Try this at home", ["BUILD ON IT NEXT", "INVOLVE THEM"]),
-            ("Build on it next", ["INVOLVE THEM", "PARENT MESSAGE"]),
-            ("Household task", ["PARENT MESSAGE"]),
-        ]:
-            pass  # simple extraction below covers the common case
-
-        home_suggestion_text = extract_section(comm_result, "TRY THIS AT HOME:", ["BUILD ON IT NEXT:", "INVOLVE THEM IN A HOUSEHOLD TASK:"])
-        build_on_it_text = extract_section(comm_result, "BUILD ON IT NEXT:", ["INVOLVE THEM IN A HOUSEHOLD TASK:"])
-        household_task_text = extract_section(comm_result, "INVOLVE THEM IN A HOUSEHOLD TASK:", [])
-
-        combined_home_suggestion = "\n".join(filter(None, [
-            f"At home: {home_suggestion_text}" if home_suggestion_text else "",
-            f"Next level: {build_on_it_text}" if build_on_it_text else "",
-            f"Household task: {household_task_text}" if household_task_text else "",
-        ]))
-
-        if child_id is not None:
-            add_observation(
-                child_id=child_id,
-                observation_text=activity_done,
-                parent_note=comm_result,
-                home_suggestion=combined_home_suggestion,
-            )
-            st.caption(f"✅ Saved to {selected_name}'s record")
+section_divider()
 
 # ==========================================
 # WEEKLY PROGRAM PLANNER
+# 15 experiences: 5 tied to the theme, 10 general covering distinct
+# curriculum streams (one stream each), grounded in the milestones for
+# the selected age band.
 # ==========================================
 
-st.markdown("<br>", unsafe_allow_html=True)
-st.divider()
-st.markdown("<br>", unsafe_allow_html=True)
-st.subheader("📅 Weekly Program Planner")
+STREAMS = [
+    "Literacy", "Numeracy", "Fine Motor", "Gross Motor / Physical",
+    "Social-Emotional", "Sensory Play", "Creative Art",
+    "Science & Discovery", "Dramatic / Imaginative Play", "Music & Movement",
+]
 
-week_theme = st.text_input("Theme for this week")
-age_for_plan = st.selectbox(
-    "Age group for weekly plan",
-    ["Babies 0-1 years", "Toddlers 1-3 years", "Preschool 3-5 years"]
-)
+with st.container(border=True):
+    st.subheader("📅 Weekly Program Planner")
+    st.caption("Generates 15 experiences: 5 tied to your theme, and 10 general experiences "
+               "covering every curriculum stream, so the week has full coverage either way.")
 
-if st.button("Generate Weekly Plan", type="primary"):
+    week_theme = st.text_input("🌈 Theme for this week")
+    age_for_plan = st.selectbox("🎂 Age group for weekly plan", AGE_BANDS, key="weekly_age_group")
 
-    with st.spinner("Generating weekly plan..."):
+    if st.button("Generate Weekly Plan", type="primary"):
+        with st.spinner("Generating weekly plan (15 experiences)..."):
+            # Avoid anything used for this age group in the last ~90 days (roughly 2-3 months).
+            recent_names = get_recent_experience_names(age_for_plan, days=90)
+            avoid_text = ("Experiences already used in the last ~3 months for this age group — do NOT "
+                          "repeat any of these, use genuinely different ones: " + "; ".join(recent_names)) if recent_names else ""
 
-        plan_prompt = f"""Create a 5 day activity program for {age_for_plan} children with the theme: {week_theme}
+            plan_prompt = f"""Create exactly 15 short early-childhood learning experiences for {age_for_plan}.
+Theme for the week: {week_theme if week_theme else 'no specific theme — keep all 15 general'}
 
-        For each day provide:
-        - Activity name
-        - Materials needed
-        - Step by step instructions
-        - EYLF outcomes addressed
-        - One open ended question for educators to ask
-        - One simple parent communication tip
+Developmental milestones for this age (base every experience on these, don't invent unrelated skills):
+{milestones_summary_text(age_for_plan)}
 
-        Make it practical, low cost and engaging."""
+{avoid_text}
 
-        plan_message = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "You are an expert early childhood educator specialising in curriculum planning aligned to EYLF Version 2.0 Australia."},
-                {"role": "user", "content": plan_prompt}
-            ]
-        )
+Requirements:
+- Exactly 5 of the 15 experiences must connect directly to the theme.
+- The remaining 10 must be general (not theme-specific) and must cover these 10 curriculum streams,
+  one experience per stream, in this order: {", ".join(STREAMS)}.
+- For each of the 15, give: a short name, which stream or theme-link it covers, materials (keep minimal),
+  and 1-2 sentences on how to run it. Keep every entry short — this is a planning list, not a full lesson plan.
+- Number 1-5 as "Theme" experiences and 6-15 as the 10 stream experiences, clearly labelled.
 
-        st.success("Weekly plan generated!")
-        st.markdown(plan_message.choices[0].message.content)
+FIRST, before anything else, output one line listing just the 15 experience names, separated by " | ",
+in this exact format (nothing else on that line):
+EXPERIENCE_NAMES: name1 | name2 | name3 | ... | name15
+
+Then on the next line put "---" alone, then the full formatted plan below that."""
+
+            plan_message = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "You are an expert early childhood educator specialising in curriculum planning aligned to EYLF Version 2.0 Australia, grounded strictly in the developmental milestones provided."},
+                    {"role": "user", "content": plan_prompt},
+                ],
+                max_tokens=3000,
+            )
+
+            full_text = plan_message.choices[0].message.content
+            experience_names = []
+            display_text = full_text
+
+            if "EXPERIENCE_NAMES:" in full_text:
+                header_line = full_text.split("EXPERIENCE_NAMES:", 1)[1].splitlines()[0]
+                experience_names = [n.strip() for n in header_line.split("|") if n.strip()]
+                if "---" in full_text:
+                    display_text = full_text.split("---", 1)[1].strip()
+
+            week_key = get_week_key()
+            save_weekly_experiences(age_for_plan, week_key, week_theme, experience_names)
+
+            st.success("Weekly plan generated!")
+            st.markdown(display_text)
+
+section_divider()
 
 # ==========================================
 # CHILD HISTORY
 # ==========================================
 
 if child_id is not None:
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.divider()
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.subheader(f"📖 {selected_name}'s History")
+    with st.container(border=True):
+        st.subheader(f"📖 {selected_name}'s History")
 
-    history = get_observations(child_id)
-    if not history:
-        st.caption("No saved entries yet — generate an activity or parent message above to start building this child's record.")
-    else:
-        for obs in history:
-            label = obs["activity"][:60] + "..." if obs["activity"] and len(obs["activity"]) > 60 else (obs["activity"] or "Note")
-            with st.expander(f"{obs['obs_date']} — {label}"):
-                if obs["observation_text"]:
-                    st.write(f"**Context:** {obs['observation_text']}")
-                if obs["activity"]:
-                    st.write(f"**Activity:**\n\n{obs['activity']}")
-                if obs["parent_note"]:
-                    st.write(f"**Parent note:**\n\n{obs['parent_note']}")
-                if obs["home_suggestion"]:
-                    st.caption(f"Home / follow-up suggestions:\n\n{obs['home_suggestion']}")
+        history = get_observations(child_id)
+        if not history:
+            st.caption("No saved entries yet for this child.")
+        else:
+            for obs in history:
+                label = obs["activity"][:60] + "..." if obs["activity"] and len(obs["activity"]) > 60 else (obs["activity"] or "Note")
+                with st.expander(f"{obs['obs_date']} — {label}"):
+                    if obs["observation_text"]:
+                        st.write(f"**Context:** {obs['observation_text']}")
+                    if obs["activity"]:
+                        st.write(f"**Activity:**\n\n{obs['activity']}")
+                    if obs["parent_note"]:
+                        st.write(f"**Parent note:**\n\n{obs['parent_note']}")
+                    if obs["home_suggestion"]:
+                        st.caption(f"Home / follow-up suggestions:\n\n{obs['home_suggestion']}")
+
+    section_divider()
 
 # ==========================================
 # SITUATION-BASED SUPPORT
 # ==========================================
 
-st.markdown("<br>", unsafe_allow_html=True)
-st.divider()
-st.markdown("<br>", unsafe_allow_html=True)
-observation_tab(client)
+with st.container(border=True):
+    observation_tab(client)
+
+section_divider()
 
 # ==========================================
 # LEARNING STORY GENERATOR
 # ==========================================
 
-st.markdown("<br>", unsafe_allow_html=True)
-st.divider()
-st.markdown("<br>", unsafe_allow_html=True)
-learning_story_tab(client)
+with st.container(border=True):
+    learning_story_tab(client)
+
+section_divider()
 
 # ==========================================
 # STORY TIME GENERATOR
 # ==========================================
 
-st.markdown("<br>", unsafe_allow_html=True)
-st.divider()
-st.markdown("<br>", unsafe_allow_html=True)
-story_generator_tab(client)
+with st.container(border=True):
+    story_generator_tab(client)
+
+section_divider()
 
 # ==========================================
 # WEEKLY WORKSHEET GENERATOR
 # ==========================================
 
-st.markdown("<br>", unsafe_allow_html=True)
-st.divider()
-st.markdown("<br>", unsafe_allow_html=True)
-worksheet_tab(client)
+with st.container(border=True):
+    worksheet_tab(client)
