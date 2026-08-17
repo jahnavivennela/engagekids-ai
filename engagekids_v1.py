@@ -3,6 +3,7 @@ import streamlit as st
 from observation import observation_tab
 from learning_story import learning_story_tab
 from story_generator import story_generator_tab
+from worksheet_generator import worksheet_tab
 from db import init_db, add_child, get_children, get_child, add_observation, get_observations
 
 # Setup
@@ -373,3 +374,12 @@ st.markdown("<br>", unsafe_allow_html=True)
 st.divider()
 st.markdown("<br>", unsafe_allow_html=True)
 story_generator_tab(client)
+
+# ==========================================
+# WEEKLY WORKSHEET GENERATOR
+# ==========================================
+
+st.markdown("<br>", unsafe_allow_html=True)
+st.divider()
+st.markdown("<br>", unsafe_allow_html=True)
+worksheet_tab(client)
