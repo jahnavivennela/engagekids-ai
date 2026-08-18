@@ -57,13 +57,20 @@ def observation_tab(client):
 
             AFTER IT SETTLES (repair/reconnect step):"""
 
-            message = client.chat.completions.create(
-                model="openai/gpt-oss-120b",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ]
-            )
-
-            st.success("Guidance ready")
-            st.markdown(message.choices[0].message.content)
+            try:
+                message = client.chat.completions.create(
+                    model="openai/gpt-oss-120b",
+                    reasoning_effort="low",
+                    max_tokens=1200,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                response_text = (message.choices[0].message.content or "").strip()
+                if not response_text:
+                    response_text = "Couldn't generate guidance this time — please try again."
+                st.success("Guidance ready")
+                st.markdown(response_text)
+            except Exception as e:
+                st.error(f"Situation support API error: {e}")

@@ -4,7 +4,7 @@ from observation import observation_tab
 from learning_story import learning_story_tab
 from story_generator import story_generator_tab
 from worksheet_generator import worksheet_tab, get_week_key
-from ui_theme import apply_theme, section_divider
+from ui_theme import apply_theme, section_divider, section_header, section_anchor, render_sidebar_nav
 from milestones_data import AGE_BANDS, milestones_summary_text
 from activity_db import (
     init_activity_tables, save_quick_activity, get_recent_quick_activity_names,
@@ -39,6 +39,7 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # Apply the shared color palette, card styling, dividers, and watermark
 apply_theme()
+render_sidebar_nav()
 
 # Header
 st.markdown(
@@ -59,7 +60,7 @@ st.markdown("---")
 # ==========================================
 
 with st.container(border=True):
-    st.subheader("👤 Select Child")
+    st.markdown(section_header("👤", "Select Child", "select-child", "coral"), unsafe_allow_html=True)
 
     children = get_children()
     child_names = {c["name"]: c["id"] for c in children}
@@ -104,7 +105,7 @@ section_divider()
 # ==========================================
 
 with st.container(border=True):
-    st.subheader("⚡ Quick Activity Suggester")
+    st.markdown(section_header("⚡", "Quick Activity Suggester", "quick-activity", "peach"), unsafe_allow_html=True)
     st.caption("A fast, dead-simple activity to re-engage the group for a few minutes — "
                "not a structured learning experience. Repeats are fine; these aren't tracked or saved per child.")
 
@@ -177,7 +178,7 @@ section_divider()
 # ==========================================
 
 with st.container(border=True):
-    st.subheader("🏠 Home Extension Message")
+    st.markdown(section_header("🏠", "Home Extension Message", "home-message", "green"), unsafe_allow_html=True)
     st.caption("A short, generic, copy-paste message for all families — no child names, "
                 "nothing personalised. Day-to-day photos/updates still go out separately via WhatsApp.")
 
@@ -234,7 +235,7 @@ STREAMS = [
 ]
 
 with st.container(border=True):
-    st.subheader("📅 Weekly Program Planner")
+    st.markdown(section_header("📅", "Weekly Program Planner", "weekly-planner", "blue"), unsafe_allow_html=True)
     st.caption("Generates 15 experiences: 5 tied to your theme, and 10 general experiences "
                "covering every curriculum stream, so the week has full coverage either way.")
 
@@ -303,7 +304,7 @@ section_divider()
 
 if child_id is not None:
     with st.container(border=True):
-        st.subheader(f"📖 {selected_name}'s History")
+        st.markdown(section_header("📖", f"{selected_name}\'s History", "child-history", "lavender"), unsafe_allow_html=True)
 
         history = get_observations(child_id)
         if not history:
@@ -327,6 +328,7 @@ if child_id is not None:
 # SITUATION-BASED SUPPORT
 # ==========================================
 
+st.markdown(section_anchor("situation-support"), unsafe_allow_html=True)
 with st.container(border=True):
     observation_tab(client)
 
@@ -336,6 +338,7 @@ section_divider()
 # LEARNING STORY GENERATOR
 # ==========================================
 
+st.markdown(section_anchor("learning-story"), unsafe_allow_html=True)
 with st.container(border=True):
     learning_story_tab(client)
 
@@ -345,6 +348,7 @@ section_divider()
 # STORY TIME GENERATOR
 # ==========================================
 
+st.markdown(section_anchor("story-time"), unsafe_allow_html=True)
 with st.container(border=True):
     story_generator_tab(client)
 
@@ -354,5 +358,6 @@ section_divider()
 # WEEKLY WORKSHEET GENERATOR
 # ==========================================
 
+st.markdown(section_anchor("worksheets"), unsafe_allow_html=True)
 with st.container(border=True):
     worksheet_tab(client)

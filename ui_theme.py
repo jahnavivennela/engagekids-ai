@@ -85,6 +85,14 @@ def apply_theme():
         border-radius: 10px !important;
     }}
 
+    /* Sidebar nav */
+    section[data-testid="stSidebar"] {{
+        background: linear-gradient(180deg, #FFF3E0 0%, #EAF6FF 100%);
+    }}
+    section[data-testid="stSidebar"] a > div:hover {{
+        transform: translateX(3px);
+    }}
+
     /* Rainbow divider used by section_divider() */
     .ek-divider {{
         height: 5px;
@@ -118,3 +126,67 @@ def section_divider():
     """A colorful divider with consistent spacing — replaces the repeated
     st.markdown('<br>') + st.divider() + st.markdown('<br>') pattern."""
     st.markdown('<hr class="ek-divider">', unsafe_allow_html=True)
+
+
+# Order matters — used to give each section a distinct, consistent color
+# both in the sidebar and in its own colored icon badge.
+NAV_ITEMS = [
+    ("select-child", "👤", "Select Child", "coral"),
+    ("quick-activity", "⚡", "Quick Activity", "peach"),
+    ("home-message", "🏠", "Home Message", "green"),
+    ("weekly-planner", "📅", "Weekly Planner", "blue"),
+    ("child-history", "📖", "Child History", "lavender"),
+    ("situation-support", "👀", "Situation Support", "coral"),
+    ("learning-story", "📔", "Learning Story", "yellow"),
+    ("story-time", "📚", "Story Time", "peach"),
+    ("worksheets", "🖍️", "Worksheets", "green"),
+]
+
+
+def section_header(icon: str, title: str, anchor_id: str, color_key: str):
+    """Drop-in replacement for a plain st.subheader() call — a colorful
+    icon badge + the same title text + an invisible anchor for the sidebar
+    to jump to. Same spot in the page, same title, purely visual upgrade.
+    Use with st.markdown(..., unsafe_allow_html=True)."""
+    color = PALETTE.get(color_key, PALETTE["coral"])
+    return f'''
+    <div id="{anchor_id}"></div>
+    <div style="display:flex;align-items:center;gap:14px;margin:6px 0 14px 0;">
+        <div style="background:{color};width:46px;height:46px;min-width:46px;border-radius:50%;
+                    display:flex;align-items:center;justify-content:center;font-size:22px;
+                    box-shadow:0 3px 8px rgba(0,0,0,0.15);">{icon}</div>
+        <div style="font-size:25px;font-weight:700;color:#333;">{title}</div>
+    </div>
+    '''
+
+
+def section_anchor(anchor_id: str):
+    """Just the invisible anchor, for sections whose title lives inside
+    another file (e.g. worksheet_tab's own st.subheader) that isn't being
+    touched — still lets the sidebar jump to the right place."""
+    return f'<div id="{anchor_id}"></div>'
+
+
+def render_sidebar_nav():
+    """Colorful icon sidebar — same-page anchor links only (pure browser
+    scroll, no rerun, no state touched)."""
+    with st.sidebar:
+        st.markdown(
+            '<div style="text-align:center;padding:6px 0 18px 0;">'
+            '<span style="font-size:30px;">🌟</span><br>'
+            '<b style="font-size:17px;">EngageKids AI</b></div>',
+            unsafe_allow_html=True,
+        )
+        for anchor_id, icon, label, color_key in NAV_ITEMS:
+            color = PALETTE.get(color_key, PALETTE["coral"])
+            st.markdown(
+                f'''<a href="#{anchor_id}" style="text-decoration:none;">
+                    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+                                margin:5px 0;border-radius:12px;background:{color}22;
+                                border-left:5px solid {color};color:#333;font-weight:600;
+                                font-size:15px;">
+                        <span style="font-size:19px;">{icon}</span><span>{label}</span>
+                    </div>
+                </a>''',
+                unsafe_allow_html=True,
+            )

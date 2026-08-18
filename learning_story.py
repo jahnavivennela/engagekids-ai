@@ -92,22 +92,17 @@ def learning_story_tab(client):
 
                 message = client.chat.completions.create(
                     model="openai/gpt-oss-120b",
+                    reasoning_effort="low",
+                    max_tokens=1500,
                     messages=[
-                        {
-                            "role": "system",
-                            "content": system_prompt
-                        },
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
                     ]
                 )
-
-                response = message.choices[0].message.content
-
-                st.success("Learning story ready")
-
+                response = (message.choices[0].message.content or "").strip()
+                if not response:
+                    response = "Couldn't generate the story this time — please try again."
+                st.success("Story ready")
                 st.markdown(response)
 
             except Exception as e:
