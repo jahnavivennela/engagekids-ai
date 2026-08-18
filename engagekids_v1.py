@@ -121,20 +121,20 @@ with st.container(border=True):
 
     def _extract_activity_name(result_text):
 
-    if not result_text or not result_text.strip():
-        return "Quick Activity"
+        if not result_text or not result_text.strip():
+            return "Quick Activity"
 
-    lines = result_text.splitlines()
+        lines = result_text.splitlines()
 
-    if not lines:
-        return "Quick Activity"
+        if not lines:
+            return "Quick Activity"
 
-    first_line = lines[0].strip()
+        first_line = lines[0].strip()
 
-    if first_line.upper().startswith("ACTIVITY:"):
-        return first_line.split(":", 1)[1].strip()
+        if first_line.upper().startswith("ACTIVITY:"):
+            return first_line.split(":", 1)[1].strip()
 
-    return first_line
+        return first_line
 
     def _generate_quick_activity():
         # Avoid anything used for this age group in the last ~90 days, not just the last one.
