@@ -148,7 +148,7 @@ ACTIVITY: <name>
 HOW: <one plain sentence>
 MATERIALS: <1-2 items max, or 'None needed'>"""
         resp = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
             max_tokens=120,
         )
@@ -209,7 +209,7 @@ generic, not tied to any specific child's interests.
 {"Also translate the MESSAGE section into: " + ", ".join(home_ext_languages) if home_ext_languages else ""}
 """
             home_message = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",
                 messages=[
                     {"role": "system", "content": "You write short, warm, generic educator-to-parent messages for early childhood centres. Never personalise to a specific child."},
                     {"role": "user", "content": home_prompt},
@@ -271,7 +271,7 @@ EXPERIENCE_NAMES: name1 | name2 | name3 | ... | name15
 Then on the next line put "---" alone, then the full formatted plan below that."""
 
             plan_message = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",
                 messages=[
                     {"role": "system", "content": "You are an expert early childhood educator specialising in curriculum planning aligned to EYLF Version 2.0 Australia, grounded strictly in the developmental milestones provided."},
                     {"role": "user", "content": plan_prompt},

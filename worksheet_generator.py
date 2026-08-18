@@ -444,7 +444,7 @@ def _maybe_get_ai_title(client, category, age_group, theme, fallback_title):
             + ". Reply with ONLY the title, nothing else."
         )
         resp = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=20,
         )
