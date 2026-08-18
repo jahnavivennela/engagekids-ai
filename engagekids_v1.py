@@ -162,7 +162,8 @@ MATERIALS: <1-2 items max, or 'None needed'>"""
         resp = client.chat.completions.create(
             model="openai/gpt-oss-120b",
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
-            max_tokens=120,
+            max_tokens=400,
+            reasoning_effort="low",
         )
         result_text = resp.choices[0].message.content.strip()
         save_quick_activity(quick_age_group, _extract_activity_name(result_text))
