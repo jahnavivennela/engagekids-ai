@@ -25,9 +25,26 @@ Since 3-4 and 4-5 share one source list, anywhere the app needs to treat
 them differently (e.g. worksheet difficulty), that's an interpretation of
 the document's own emerging-to-advanced ordering, not a second source —
 flagged here so it's never confused with a literal document split.
+
+SECOND CAVEAT — "0-6 months" / "6-12 months" split:
+The dropdown originally offered one combined "0-1 years" band; it's now
+split into "0-6 months" and "6-12 months" for centres that separate infant
+rooms this finely. The source document's OWN infant bands are Birth-4
+months, 4-8 months, and 8-12 months — NOT a 6-month cutoff — so this split
+is NOT pulled from a labeled 0-6/6-12 source section. It's the same "0-1
+years" bullets divided in two by matching each bullet's described
+behaviour to roughly the first half of the first year (reflexes, tracking,
+early reaching/rolling, early babbling) versus the second half (sitting,
+crawling, pulling to stand, stranger anxiety, first words/gestures).
+Treat it as a reasonable planning approximation, not a literal document
+split — if exact source fidelity matters, the more defensible request is
+the three original bands (Birth-4, 4-8, 8-12 months) instead. The old
+"0-1 years" key is kept in MILESTONES/AGE_BAND_SOURCE for any existing
+saved data that still references it, but is no longer offered in
+AGE_BANDS (i.e. no longer selectable from the dropdown going forward).
 """
 
-AGE_BANDS = ["0-1 years", "1-2 years", "2-3 years", "3-4 years", "4-5 years"]
+AGE_BANDS = ["0-6 months", "6-12 months", "1-2 years", "2-3 years", "3-4 years", "4-5 years"]
 
 # The literal bullet points, by band, by developmental area.
 MILESTONES = {
@@ -82,6 +99,89 @@ MILESTONES = {
             "expresses needs by crying; when content makes small throaty noises",
             "soothed by sound of voice or by low rhythmic sounds; may start to copy sounds; coos and gurgles",
             "babbles and repeats sounds; makes talking sounds in response to others talking",
+            "smiles and babbles at own image in mirror; responds to own name",
+            "says words like 'dada' or 'mama'; waves goodbye; imitates hand clapping",
+            "enjoys finger-rhymes; shouts to attract attention",
+            "vocalises loudly using most vowels and consonants - sounding like conversation",
+        ],
+        "seek_advice_if": [
+            "is floppy or stiff; cries a lot; arches back",
+            "is not responding to sounds or familiar faces",
+            "is not showing interest or responding when played with",
+            "is not feeding as expected / not learning to eat solids",
+            "is not starting to make sounds or babbling",
+            "is not beginning to sit, crawl, or pull to stand",
+        ],
+    },
+    "0-6 months": {  # approximated subset of "0-1 years" bullets — see SECOND CAVEAT above
+        "physical": [
+            "moves whole body, squirms, arms wave, legs move up and down",
+            "startle reflex when placed unwrapped on flat surface / when hears loud noise",
+            "head turns to side when cheek touched; sucking motions with mouth (seeking nipple)",
+            "responds to gentle touching, cuddling, rocking",
+            "able to lift head and chest when laying on stomach; begins to roll from side to side",
+            "starts reaching to swipe at dangling objects; able to grasp object put into hands",
+            "plays with feet and toes; makes effort to sit alone, but needs hand support",
+        ],
+        "social": [
+            "smiles and laughs; makes eye contact when held about 20cm from adult's face",
+            "alert and preoccupied with faces; moves head to sound of voices",
+            "reacts with arousal, attention or approach to presence of another baby or young child",
+        ],
+        "emotional": [
+            "bonding; cries (peaks about six to eight weeks) and levels off about 12-14 weeks",
+            "cries when hungry or uncomfortable and usually stops when held",
+            "shows excitement as parent prepared to feed",
+            "laughs, especially in social interactions; may soothe self by sucking thumb or dummy",
+        ],
+        "cognitive": [
+            "looks toward direction of sound; eyes track slow moving target for brief period",
+            "looks at edges, patterns with light/dark contrast and faces",
+            "imitates adult tongue movements when being held/talked to; learns through sensory experiences",
+            "swipes at dangling objects; shakes and stares at toy placed in hand",
+            "repeats accidentally caused actions that are interesting",
+        ],
+        "language": [
+            "expresses needs by crying; when content makes small throaty noises",
+            "soothed by sound of voice or by low rhythmic sounds; may start to copy sounds; coos and gurgles",
+            "babbles and repeats sounds; makes talking sounds in response to others talking",
+        ],
+        "seek_advice_if": [
+            "is floppy or stiff; cries a lot; arches back",
+            "is not responding to sounds or familiar faces",
+            "is not showing interest or responding when played with",
+            "is not feeding as expected",
+        ],
+    },
+    "6-12 months": {  # approximated subset of "0-1 years" bullets — see SECOND CAVEAT above
+        "physical": [
+            "makes crawling movements when lying on stomach; rolls from back to stomach",
+            "reaches for and grasps objects, using one hand to grasp",
+            "crawling movements using both hands and feet; able to take weight on feet when standing",
+            "pulls self to standing position when hands held; sits without support",
+            "stands by pulling self up using furniture; stepping movements around furniture",
+            "transfers objects from hand to hand; picks up and pokes small objects with thumb and finger",
+            "crawls; mature crawling (quick and fluent); may stand alone momentarily",
+            "uses hands to feed self; rolls ball and crawls to retrieve",
+        ],
+        "social": [
+            "responds to own name; recognises familiar people and stretches arms to be picked up",
+            "shows definite anxiety or wariness at appearance of strangers",
+        ],
+        "emotional": [
+            "begins to show wariness of strangers; may fret when parent leaves the room",
+            "actively seeks to be next to parent or principal caregiver",
+            "shows signs of anxiety or stress if parent goes away",
+            "shows signs of empathy to distress of another (but often soothes self)",
+        ],
+        "cognitive": [
+            "enjoys games such as peek-a-boo or pat-a-cake; will search for partly hidden object",
+            "able to coordinate looking, hearing and touching; enjoys banging objects, scrunching paper",
+            "moves obstacle to get at desired toy; bangs two objects held in hands together",
+            "makes gestures to communicate/symbolise objects, e.g. points to something they want",
+            "understands gestures / responds to 'bye bye'; notices difference and shows surprise",
+        ],
+        "language": [
             "smiles and babbles at own image in mirror; responds to own name",
             "says words like 'dada' or 'mama'; waves goodbye; imitates hand clapping",
             "enjoys finger-rhymes; shouts to attract attention",
@@ -239,7 +339,9 @@ MILESTONES = {
 
 # Which source band each dropdown band actually pulls from (see caveat above)
 AGE_BAND_SOURCE = {
-    "0-1 years": "0-1 years",
+    "0-6 months": "0-6 months",
+    "6-12 months": "6-12 months",
+    "0-1 years": "0-1 years",  # kept for any old saved data referencing this band; no longer offered in AGE_BANDS
     "1-2 years": "1-2 years",
     "2-3 years": "2-3 years",
     "3-4 years": "3-5 years",

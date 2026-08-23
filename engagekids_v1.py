@@ -6,9 +6,12 @@ from story_generator import story_generator_tab
 from worksheet_generator import worksheet_tab, get_week_key
 from ui_theme import apply_theme, section_divider, section_header, section_anchor, render_sidebar_nav
 from milestones_data import AGE_BANDS, milestones_summary_text
+import re
 from activity_db import (
     init_activity_tables, save_quick_activity, get_recent_quick_activity_names,
     save_weekly_experiences, get_recent_experience_names,
+    save_home_ideas, get_recent_home_ideas,
+    save_magic_trick, get_recent_magic_tricks,
 )
 from db import init_db, add_child, get_children, get_child, add_observation, get_observations
 
@@ -45,7 +48,7 @@ render_sidebar_nav()
 st.markdown(
     """
     <div style="text-align: center; padding: 10px 0;">
-        <h1 style="color: #FF6B6B; margin-bottom: 0;">🌟 EngageKids AI</h1>
+        <h1 style="color: #FF6B6B; margin-bottom: 0; font-size: 30px; font-weight: 600;">🌟 EngageKids AI</h1>
         <p style="color: #666666; font-size: 16px; margin-top: 5px;">
             Real-time, classroom-tested support for early childhood educators
         </p>
@@ -95,7 +98,53 @@ with st.container(border=True):
     else:
         st.caption(f"Working with: **{selected_name}** ({child_record['age_group']}) — interests: {child_record['interests'] or 'not set'}")
 
-section_divider()
+section_divider("coral")
+
+# ==========================================
+# SITUATION-BASED SUPPORT
+# ==========================================
+
+st.markdown(section_anchor("situation-support"), unsafe_allow_html=True)
+with st.container(border=True):
+    observation_tab(client)
+
+section_divider("yellow")
+
+# ==========================================
+# LEARNING STORY GENERATOR
+# ==========================================
+
+st.markdown(section_anchor("learning-story"), unsafe_allow_html=True)
+with st.container(border=True):
+    learning_story_tab(client)
+
+section_divider("lavender")
+
+# ==========================================
+# CHILD HISTORY
+# ==========================================
+
+if child_id is not None:
+    with st.container(border=True):
+        st.markdown(section_header("📖", f"{selected_name}\'s History", "child-history", "lavender"), unsafe_allow_html=True)
+
+        history = get_observations(child_id)
+        if not history:
+            st.caption("No saved entries yet for this child.")
+        else:
+            for obs in history:
+                label = obs["activity"][:60] + "..." if obs["activity"] and len(obs["activity"]) > 60 else (obs["activity"] or "Note")
+                with st.expander(f"{obs['obs_date']} — {label}"):
+                    if obs["observation_text"]:
+                        st.write(f"**Context:** {obs['observation_text']}")
+                    if obs["activity"]:
+                        st.write(f"**Activity:**\n\n{obs['activity']}")
+                    if obs["parent_note"]:
+                        st.write(f"**Parent note:**\n\n{obs['parent_note']}")
+                    if obs["home_suggestion"]:
+                        st.caption(f"Home / follow-up suggestions:\n\n{obs['home_suggestion']}")
+
+    section_divider("peach")
 
 # ==========================================
 # QUICK ACTIVITY SUGGESTER
@@ -181,57 +230,120 @@ MATERIALS: <1-2 items max, or 'None needed'>"""
                 st.session_state["quick_activity_result"] = _generate_quick_activity()
             st.rerun()
 
-section_divider()
+section_divider("lavender")
 
 # ==========================================
-# HOME EXTENSION MESSAGE (generic — for the whole group, not personalised)
-# Photos/day-to-day updates go out separately via WhatsApp; this is only
-# for a short, copy-paste, no-names message with take-home ideas.
+# WEEKLY MAGIC TRICK
+# A single "wow" science moment for the week, using minimal safe household
+# materials — meant to surprise/delight the group, not a full lesson plan.
 # ==========================================
 
 with st.container(border=True):
-    st.markdown(section_header("🏠", "Home Extension Message", "home-message", "green"), unsafe_allow_html=True)
-    st.caption("A short, generic, copy-paste message for all families — no child names, "
-                "nothing personalised. Day-to-day photos/updates still go out separately via WhatsApp.")
+    st.markdown(section_header("✨", "Weekly Magic Trick", "magic-trick", "lavender"), unsafe_allow_html=True)
+    st.caption("One simple, safe 'wow' science moment for the week — minimal household materials, "
+               "always educator-led and supervised. Won't repeat for about 2 months. "
+               "Safety rules automatically tighten for younger age groups.")
 
-    activity_or_theme = st.text_area(
-        "✏️ What did the group do today (activity or theme)?",
-        key="home_ext_input",
-        placeholder="e.g. Water play and pouring/measuring with cups and jugs",
-    )
-    home_ext_languages = st.multiselect(
-        "🌍 Translate to (optional)",
-        ["Hindi", "Spanish", "Arabic", "Mandarin", "Vietnamese", "French"],
-        key="home_ext_languages",
-    )
+    magic_age_group = st.selectbox("🎂 Age group", AGE_BANDS, key="magic_age_group")
 
-    if st.button("Generate Home Message", type="primary"):
-        with st.spinner("Generating..."):
-            home_prompt = f"""Today's group activity/theme: {activity_or_theme}
+    def _magic_trick_safety_notes(age_group: str) -> str:
+        """Younger children mouth objects and have no impulse control around choking
+        or chemical hazards, so the youngest bands get much stricter constraints than
+        a 4-5 year old room would need.
 
-Write a SHORT, GENERIC message for early childhood educators to copy-paste and send to ALL families in
-the room — do not use any child's name or personalise it to one child. Format:
+        IMPORTANT: any band expressed in MONTHS (e.g. "6-12 months") is always an
+        infant under 1 year old, no matter what number it starts with — do NOT
+        classify by leading digit for these, or "6-12 months" would misread as "6"
+        and fall into an older, less-strict tier. Only YEAR-based bands (1-2 years
+        and up) are classified by their leading number."""
+        if "month" in age_group.lower():
+            lead_age = 0  # any month-based band is an infant, full stop
+        else:
+            match = re.match(r"(\d+)", age_group)
+            lead_age = int(match.group(1)) if match else 5
 
-MESSAGE:
-1-2 sentence intro about today's activity/theme, written generically for the whole group.
+        if lead_age <= 1:
+            return (
+                "This is an INFANT/YOUNG TODDLER room (0-6 months, 6-12 months, or 1-2 years). EXTRA "
+                "SAFETY — non-negotiable: "
+                "absolutely NO small parts or choking hazards (no balloons, no beads, buttons, or anything "
+                "smaller than a fist), NO chemicals or substances of any kind (no baking soda/vinegar, no "
+                "food colouring in an open container) that a child could reach, touch, or put in their "
+                "mouth. Children at this age must ONLY WATCH from a safe distance — never hold, touch, or "
+                "help with any material. Prefer a purely visual/sensory effect instead: light and shadow "
+                "play, a sealed sensory bottle the educator shakes, water poured (by the educator only) "
+                "between two clear sealed containers, simple peekaboo-style surprise using only the "
+                "educator's hands or a scarf. If you cannot make it this safe, choose a different idea."
+            )
+        elif lead_age <= 3:
+            return (
+                "This is a YOUNG PRESCHOOL room (2-3 or 3-4 years). Extra care needed: no small parts or "
+                "choking hazards (no loose balloons, no small beads), no substance a child could taste or "
+                "get in their eyes if they got close. Chemical reactions (e.g. baking soda + vinegar) are "
+                "OK only in a stable, closed or hard-to-tip container, entirely handled by the educator, "
+                "with children watching from a safe distance — never handling the materials themselves."
+            )
+        else:
+            return (
+                "This is an older preschool room (4-5+ years). Standard supervision applies: educator "
+                "handles any chemicals/hot/sharp items, children may help with clearly safe steps (e.g. "
+                "adding a pre-measured ingredient under direct supervision), and normal choking-hazard "
+                "common sense still applies (no unsupervised small parts)."
+            )
 
-TRY AT HOME (3 ideas):
-Three short, simple household-based ideas any parent could do that reinforce the same skill area —
-generic, not tied to any specific child's interests.
+    if st.button("✨ Generate This Week's Magic Trick", type="primary"):
+        with st.spinner("Conjuring something magical..."):
+            avoid_tricks = get_recent_magic_tricks(magic_age_group, days=60)
+            avoid_text = (
+                "Already used in the last ~2 months — do NOT repeat any of these: " + "; ".join(avoid_tricks)
+            ) if avoid_tricks else ""
 
-{"Also translate the MESSAGE section into: " + ", ".join(home_ext_languages) if home_ext_languages else ""}
-"""
-            home_message = client.chat.completions.create(
+            magic_prompt = f"""Suggest ONE simple, completely safe "magic trick" science moment for early
+childhood educators to show a group of young children, designed to genuinely surprise and delight them
+(e.g. a colour that changes, something that fizzes, a balloon that sticks with static, something that
+floats then sinks, a "fountain" effect). Requirements:
+- Only common, safe household/kitchen materials (e.g. baking soda, vinegar, dish soap, food colouring,
+  water, balloons, tissue paper) — nothing a parent or centre wouldn't already have or easily buy at a
+  supermarket, and nothing hazardous.
+- Must be run BY THE EDUCATOR, with children watching/reacting — not something children do unsupervised.
+- Include a one-line safety note if relevant (e.g. adult handles it, keep out of eyes).
+
+Age group this is for: {magic_age_group}
+{_magic_trick_safety_notes(magic_age_group)}
+
+{avoid_text}
+
+Reply in EXACTLY this format, nothing else:
+NAME: <short catchy name>
+MATERIALS: <short list>
+STEPS: <2-4 short numbered steps>
+WOW: <one sentence on what the children will see/react to>
+SKILL: <one short plain-language phrase on what curiosity/skill this builds>
+SAFETY: <one short line, or 'None needed'>"""
+
+            resp = client.chat.completions.create(
                 model="openai/gpt-oss-120b",
                 messages=[
-                    {"role": "system", "content": "You write short, warm, generic educator-to-parent messages for early childhood centres. Never personalise to a specific child."},
-                    {"role": "user", "content": home_prompt},
+                    {"role": "system", "content": "You suggest safe, simple, delightful science demonstrations for early childhood educators to perform for young children, using only common household materials. You strictly enforce stricter safety rules for younger age groups, especially around choking hazards and anything a child could taste or touch unsupervised."},
+                    {"role": "user", "content": magic_prompt},
                 ],
+                max_tokens=700,
+                reasoning_effort="low",
             )
-            st.success("Ready to copy and send!")
-            st.markdown(home_message.choices[0].message.content)
+            result_text = resp.choices[0].message.content.strip()
+            st.session_state["magic_trick_result"] = result_text
 
-section_divider()
+            trick_name = "Magic Trick"
+            for line in result_text.splitlines():
+                if line.upper().startswith("NAME:"):
+                    trick_name = line.split(":", 1)[1].strip()
+                    break
+            save_magic_trick(trick_name, magic_age_group)
+
+    if "magic_trick_result" in st.session_state:
+        st.info(st.session_state["magic_trick_result"])
+
+section_divider("blue")
 
 # ==========================================
 # WEEKLY PROGRAM PLANNER
@@ -254,6 +366,24 @@ with st.container(border=True):
     week_theme = st.text_input("🌈 Theme for this week")
     age_for_plan = st.selectbox("🎂 Age group for weekly plan", AGE_BANDS, key="weekly_age_group")
 
+    def _sensory_stream_guidance(age_group: str) -> str:
+        """Babies mouth everything and can't be trusted with loose/open sensory
+        materials, so their 'Sensory Play' experience should default to a
+        SEALED exploration format (e.g. a taped zip-lock sensory bag) rather
+        than open trays of material meant for older, non-mouthing children."""
+        if age_group in ("0-6 months", "6-12 months"):
+            return (
+                "\nSPECIAL RULE for the Sensory Play stream, since this room is 0-1 years (babies mouth "
+                "everything and must never access loose material): make it a SEALED sensory bag/pouch — "
+                "e.g. water plus a little oil (they don't mix, so it's visually interesting) and a few "
+                "drops of food colouring or some glitter/pom-poms, sealed and taped shut inside a sturdy "
+                "zip-lock bag (reinforce the seal with tape, and taped to a table or the floor so it can't "
+                "be picked up whole). Baby explores entirely through the sealed bag — squishing, pressing, "
+                "watching the bubbles/colours move — with zero risk of spilling, choking, or ingestion. "
+                "Never suggest loose/open sensory materials (rice, beads, paint, etc.) for this age."
+            )
+        return ""
+
     if st.button("Generate Weekly Plan", type="primary"):
         with st.spinner("Generating weekly plan (15 experiences)..."):
             # Avoid anything used for this age group in the last ~90 days (roughly 2-3 months).
@@ -266,6 +396,7 @@ Theme for the week: {week_theme if week_theme else 'no specific theme — keep a
 
 Developmental milestones for this age (base every experience on these, don't invent unrelated skills):
 {milestones_summary_text(age_for_plan)}
+{_sensory_stream_guidance(age_for_plan)}
 
 {avoid_text}
 
@@ -308,63 +439,7 @@ Then on the next line put "---" alone, then the full formatted plan below that."
             st.success("Weekly plan generated!")
             st.markdown(display_text)
 
-section_divider()
-
-# ==========================================
-# CHILD HISTORY
-# ==========================================
-
-if child_id is not None:
-    with st.container(border=True):
-        st.markdown(section_header("📖", f"{selected_name}\'s History", "child-history", "lavender"), unsafe_allow_html=True)
-
-        history = get_observations(child_id)
-        if not history:
-            st.caption("No saved entries yet for this child.")
-        else:
-            for obs in history:
-                label = obs["activity"][:60] + "..." if obs["activity"] and len(obs["activity"]) > 60 else (obs["activity"] or "Note")
-                with st.expander(f"{obs['obs_date']} — {label}"):
-                    if obs["observation_text"]:
-                        st.write(f"**Context:** {obs['observation_text']}")
-                    if obs["activity"]:
-                        st.write(f"**Activity:**\n\n{obs['activity']}")
-                    if obs["parent_note"]:
-                        st.write(f"**Parent note:**\n\n{obs['parent_note']}")
-                    if obs["home_suggestion"]:
-                        st.caption(f"Home / follow-up suggestions:\n\n{obs['home_suggestion']}")
-
-    section_divider()
-
-# ==========================================
-# SITUATION-BASED SUPPORT
-# ==========================================
-
-st.markdown(section_anchor("situation-support"), unsafe_allow_html=True)
-with st.container(border=True):
-    observation_tab(client)
-
-section_divider()
-
-# ==========================================
-# LEARNING STORY GENERATOR
-# ==========================================
-
-st.markdown(section_anchor("learning-story"), unsafe_allow_html=True)
-with st.container(border=True):
-    learning_story_tab(client)
-
-section_divider()
-
-# ==========================================
-# STORY TIME GENERATOR
-# ==========================================
-
-st.markdown(section_anchor("story-time"), unsafe_allow_html=True)
-with st.container(border=True):
-    story_generator_tab(client)
-
-section_divider()
+section_divider("green")
 
 # ==========================================
 # WEEKLY WORKSHEET GENERATOR
@@ -373,3 +448,94 @@ section_divider()
 st.markdown(section_anchor("worksheets"), unsafe_allow_html=True)
 with st.container(border=True):
     worksheet_tab(client)
+
+section_divider("green")
+
+# ==========================================
+# HOME EXTENSION MESSAGE (generic — for the whole group, not personalised)
+# Photos/day-to-day updates go out separately via WhatsApp; this is only
+# for a short, copy-paste, no-names message with take-home ideas.
+# ==========================================
+
+with st.container(border=True):
+    st.markdown(section_header("🏠", "Home Extension Message", "home-message", "green"), unsafe_allow_html=True)
+    st.caption("A short, generic, copy-paste message for all families — no child names, "
+                "nothing personalised. Day-to-day photos/updates still go out separately via WhatsApp. "
+                "'Try at home' ideas only use things families already have — kitchen, laundry, or general "
+                "household items, never something to go and buy — and each idea names the skill it builds. "
+                "Ideas won't repeat for about 2-3 months.")
+
+    activity_or_theme = st.text_area(
+        "✏️ What did the group do today (activity or theme)?",
+        key="home_ext_input",
+        placeholder="e.g. Water play and pouring/measuring with cups and jugs",
+    )
+    home_ext_languages = st.multiselect(
+        "🌍 Translate to (optional)",
+        ["Hindi", "Spanish", "Arabic", "Mandarin", "Vietnamese", "French"],
+        key="home_ext_languages",
+    )
+
+    if st.button("Generate Home Message", type="primary"):
+        with st.spinner("Generating..."):
+            avoid_ideas = get_recent_home_ideas(days=75)
+            avoid_text = (
+                "Ideas already sent to families in the last ~2-3 months — do NOT repeat any of these, "
+                "come up with genuinely different ones: " + "; ".join(avoid_ideas)
+            ) if avoid_ideas else ""
+
+            home_prompt = f"""Today's group activity/theme: {activity_or_theme}
+
+Write a SHORT, GENERIC message for early childhood educators to copy-paste and send to ALL families in
+the room — do not use any child's name or personalise it to one child. Format:
+
+MESSAGE:
+1-2 sentence intro about today's activity/theme, written generically for the whole group.
+
+TRY AT HOME (3 ideas):
+Three short, simple ideas any parent could do THAT SAME EVENING using ONLY things already in a typical
+home — kitchen items (bowls, spoons, cups, pasta, rice), laundry items (socks, pegs, baskets), bathroom
+items, or general household objects (cushions, blankets, boxes already lying around). Do NOT suggest
+anything a parent would need to buy or source specially (no craft-store items, no printables). For each
+idea, on the line right after it, add "Skill: <one short plain-language phrase>" naming the skill it
+builds, so it reads like:
+1. <idea>
+   Skill: <skill>
+2. <idea>
+   Skill: <skill>
+3. <idea>
+   Skill: <skill>
+
+{avoid_text}
+
+{"Also translate the MESSAGE section into: " + ", ".join(home_ext_languages) if home_ext_languages else ""}
+"""
+            home_message = client.chat.completions.create(
+                model="openai/gpt-oss-120b",
+                messages=[
+                    {"role": "system", "content": "You write short, warm, generic educator-to-parent messages for early childhood centres. Never personalise to a specific child. 'Try at home' ideas must use only ordinary things already found around a home — never anything to purchase."},
+                    {"role": "user", "content": home_prompt},
+                ],
+            )
+            result_text = home_message.choices[0].message.content
+            st.success("Ready to copy and send!")
+            st.markdown(result_text)
+
+            # Pull out just the idea lines (not the "Skill:" lines) to save for repeat-avoidance.
+            idea_lines = [
+                re.sub(r"^\s*\d+[\.\)]\s*", "", line).strip()
+                for line in result_text.splitlines()
+                if re.match(r"^\s*\d+[\.\)]", line)
+            ]
+            if idea_lines:
+                save_home_ideas(idea_lines)
+
+section_divider("peach")
+
+# ==========================================
+# STORY TIME GENERATOR
+# ==========================================
+
+st.markdown(section_anchor("story-time"), unsafe_allow_html=True)
+with st.container(border=True):
+    story_generator_tab(client)

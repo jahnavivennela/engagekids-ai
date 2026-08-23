@@ -29,9 +29,15 @@ def init_worksheet_tables():
                 title TEXT,
                 html_content TEXT,
                 source TEXT,                  -- "auto" or "manual"
+                used_items TEXT,              -- comma-separated specific items used (theme name, shape, letter...) for repeat-avoidance
                 created_at TEXT DEFAULT (datetime('now'))
             )
         """)
+        # used_items was added after the original release — add it to any
+        # pre-existing database file without losing saved worksheets.
+        existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(worksheets)").fetchall()}
+        if "used_items" not in existing_cols:
+            conn.execute("ALTER TABLE worksheets ADD COLUMN used_items TEXT")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS worksheet_feedback (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,13 +57,16 @@ def init_worksheet_tables():
 
 # ---------- Worksheets ----------
 
-def save_worksheet(week_key: str, age_group: str, category: str, title: str, html_content: str, source: str = "auto") -> int:
-    """Saves one generated worksheet. Returns the new row's id."""
+def save_worksheet(week_key: str, age_group: str, category: str, title: str, html_content: str, source: str = "auto", used_items: list = None) -> int:
+    """Saves one generated worksheet. Returns the new row's id.
+    `used_items` are the specific items (theme picture name, shape, letter...)
+    this worksheet used, so future generations for the same age group +
+    category can avoid repeating them."""
     with get_conn() as conn:
         cur = conn.execute(
-            """INSERT INTO worksheets (week_key, age_group, category, title, html_content, source, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (week_key, age_group, category, title, html_content, source, datetime.now().isoformat()),
+            """INSERT INTO worksheets (week_key, age_group, category, title, html_content, source, used_items, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (week_key, age_group, category, title, html_content, source, ",".join(used_items or []), datetime.now().isoformat()),
         )
         return cur.lastrowid
 
@@ -80,6 +89,23 @@ def get_recent_titles(age_group: str, lookback_weeks: int = 8) -> list[str]:
             (age_group, lookback_weeks * 5),
         ).fetchall()
         return [r["title"] for r in rows if r["title"]]
+
+
+def get_recent_used_items(age_group: str, category: str, lookback_weeks: int = 8) -> list[str]:
+    """Returns specific items (theme picture names, shapes, letters...) used
+    recently for this exact age group + category, so the same generator call
+    can steer away from repeating them — separate from get_recent_titles,
+    which only looks at AI-generated titles."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT used_items FROM worksheets WHERE age_group = ? AND category = ? ORDER BY created_at DESC LIMIT ?",
+            (age_group, category, lookback_weeks * 3),
+        ).fetchall()
+        items = []
+        for r in rows:
+            if r["used_items"]:
+                items.extend([i for i in r["used_items"].split(",") if i])
+        return items
 
 
 def delete_worksheet(worksheet_id: int) -> None:

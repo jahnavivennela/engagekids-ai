@@ -1,4 +1,30 @@
 import streamlit as st
+
+from db import get_children
+from milestones_data import AGE_BANDS, milestones_summary_text
+
+# Children are added under "Select Child" and saved with an age_group string
+# like "3-5 years" (free text) — map anything we don't recognise to the
+# closest of our 5 dropdown bands so a saved child still gets a sensible default.
+def _closest_age_band(stored_age_group: str) -> str:
+    if not stored_age_group:
+        return AGE_BANDS[0]
+    t = stored_age_group.lower()
+    if "0" in t and "1" in t:
+        return "0-1 years"
+    if t.strip() in [b.lower() for b in AGE_BANDS]:
+        return next(b for b in AGE_BANDS if b.lower() == t.strip())
+    if "1" in t and "2" in t:
+        return "1-2 years"
+    if "2" in t and "3" in t:
+        return "2-3 years"
+    if "4" in t or "5" in t:
+        return "4-5 years"
+    if "3" in t:
+        return "3-4 years"
+    return AGE_BANDS[0]
+
+
 def learning_story_tab(client):
 
     st.subheader("📖 Learning Story Generator")
@@ -7,14 +33,36 @@ def learning_story_tab(client):
         "*Describe what the child did — get a documented learning story ready to use*"
     )
 
-    child_name = st.text_input(
-        "Child's name (or initials)",
-        key="story_child_name"
-    )
+    children = get_children()
+    selected_child = None
+
+    if children:
+        options = [f"{c['name']}" for c in children] + ["Someone not in this list"]
+        choice = st.selectbox(
+            "Child's name",
+            options,
+            key="story_child_choice",
+        )
+        if choice != "Someone not in this list":
+            selected_child = next(c for c in children if c["name"] == choice)
+            child_name = selected_child["name"]
+            if selected_child.get("interests"):
+                st.caption(f"On file for {child_name}: {selected_child['interests']}")
+        else:
+            child_name = st.text_input("Child's name (or initials)", key="story_child_name_other")
+    else:
+        st.caption("No children added yet under Select Child — you can still write a story using just a name/initials below.")
+        child_name = st.text_input("Child's name (or initials)", key="story_child_name_other")
+
+    default_age_index = 0
+    if selected_child:
+        default_band = _closest_age_band(selected_child.get("age_group", ""))
+        default_age_index = AGE_BANDS.index(default_band)
 
     age_group = st.selectbox(
         "Age group",
-        ["Babies 0-1 years", "Toddlers 1-3 years", "Preschool 3-5 years"],
+        AGE_BANDS,
+        index=default_age_index,
         key="story_age_group"
     )
 
@@ -45,7 +93,9 @@ def learning_story_tab(client):
 
         with st.spinner("Writing learning story..."):
 
-            system_prompt = """
+            milestones_context = milestones_summary_text(age_group)
+
+            system_prompt = f"""
             You are an expert early childhood educator who writes
             documented learning stories for children's portfolios,
             aligned to the Early Years Learning Framework (EYLF)
@@ -61,14 +111,21 @@ def learning_story_tab(client):
               just other educators
             - Is honest and specific to the observation given, not
               padded with generic developmental language
+
+            Reference developmental milestones for this age band (from the
+            Developmental Milestones and EYLF/NQS practice-based resource) —
+            use this to ground "what this shows" in realistic, age-appropriate
+            language, not to force the observation to match every bullet:
+            {milestones_context}
             """
 
-            name_text = child_name.strip() if child_name.strip() else "The child"
+            name_text = child_name.strip() if child_name and child_name.strip() else "The child"
+            interests_line = f"\nKnown interests: {selected_child['interests']}" if selected_child and selected_child.get("interests") else ""
 
             prompt = f"""
             Child: {name_text}
             Age group: {age_group}
-            Tone: {tone}
+            Tone: {tone}{interests_line}
 
             Observation:
             {observation}

@@ -10,7 +10,8 @@ Usage in engagekids_v1.py:
     from ui_theme import apply_theme, section_divider
     apply_theme()   # once, right after st.set_page_config()
     ...
-    section_divider()   # between major sections, instead of manual <br>/divider
+    section_divider("peach")   # between major sections — pass the color
+                                # of the section coming NEXT
 """
 
 import streamlit as st
@@ -28,20 +29,34 @@ PALETTE = {
 
 
 def apply_theme():
+    # Loaded as <link> tags (with preconnect) rather than a CSS @import —
+    # @import inside a <style> block injected via st.markdown can silently
+    # fail or load late on some setups; <link> tags are more reliable and
+    # show up as a normal failed network request in devtools if blocked.
+    st.markdown("""
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    """, unsafe_allow_html=True)
+
     st.markdown(f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700&display=swap');
-
+    /* Inter for body/inputs/buttons — Baloo 2 reserved for big headers only,
+       so the app reads as clean/professional while keeping brand personality
+       in the headline moments. */
     html, body, [class*="css"] {{
-        font-family: 'Baloo 2', 'Trebuchet MS', sans-serif;
+        font-family: 'Inter', 'Trebuchet MS', sans-serif;
     }}
 
     .stApp {{
-        background: linear-gradient(160deg, #FFF9EC 0%, #FFF3E0 40%, #EAF6FF 100%);
+        background: linear-gradient(160deg, #FFFBF5 0%, #FFF6EA 100%);
     }}
 
     /* Headings */
-    h1 {{ color: {PALETTE['coral']}; }}
+    h1 {{
+        color: {PALETTE['coral']};
+        font-family: 'Baloo 2', sans-serif;
+    }}
     h2, h3 {{ color: #333; }}
     .stApp h3 {{
         border-left: 6px solid {PALETTE['blue']};
@@ -72,12 +87,19 @@ def apply_theme():
         font-weight: 700;
     }}
 
-    /* Bordered containers (st.container(border=True)) get a soft card look */
+    /* Bordered containers (st.container(border=True)) get a soft card look,
+       now with a subtle lift on hover so it feels like a built product. */
     div[data-testid="stVerticalBlockBorderWrapper"] {{
         border-radius: 16px !important;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        border: 1px solid rgba(0,0,0,0.08);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.12);
         background: white;
         padding: 4px;
+        transition: box-shadow 0.2s ease, transform 0.2s ease;
+    }}
+    div[data-testid="stVerticalBlockBorderWrapper"]:hover {{
+        box-shadow: 0 8px 26px rgba(0,0,0,0.16);
+        transform: translateY(-2px);
     }}
 
     /* Inputs */
@@ -91,16 +113,6 @@ def apply_theme():
     }}
     section[data-testid="stSidebar"] a > div:hover {{
         transform: translateX(3px);
-    }}
-
-    /* Rainbow divider used by section_divider() */
-    .ek-divider {{
-        height: 5px;
-        border: none;
-        border-radius: 5px;
-        margin: 28px 0;
-        background: linear-gradient(90deg, {PALETTE['coral']}, {PALETTE['yellow']}, {PALETTE['green']}, {PALETTE['blue']}, {PALETTE['lavender']});
-        opacity: 0.85;
     }}
 
     /* Watermark, bottom-right, non-interactive */
@@ -122,24 +134,31 @@ def apply_theme():
     """, unsafe_allow_html=True)
 
 
-def section_divider():
-    """A colorful divider with consistent spacing — replaces the repeated
-    st.markdown('<br>') + st.divider() + st.markdown('<br>') pattern."""
-    st.markdown('<hr class="ek-divider">', unsafe_allow_html=True)
+def section_divider(color_key: str = "coral"):
+    """A single-tone divider matching the color of the section it leads
+    into — replaces the old all-colors-at-once rainbow bar, which read as
+    busy rather than structured. Pass the NEXT section's color_key."""
+    color = PALETTE.get(color_key, PALETTE["coral"])
+    st.markdown(
+        f'<hr style="height:3px;border:none;border-radius:3px;margin:28px 0;'
+        f'background:{color};opacity:0.55;">',
+        unsafe_allow_html=True,
+    )
 
 
 # Order matters — used to give each section a distinct, consistent color
 # both in the sidebar and in its own colored icon badge.
 NAV_ITEMS = [
     ("select-child", "👤", "Select Child", "coral"),
-    ("quick-activity", "⚡", "Quick Activity", "peach"),
-    ("home-message", "🏠", "Home Message", "green"),
-    ("weekly-planner", "📅", "Weekly Planner", "blue"),
-    ("child-history", "📖", "Child History", "lavender"),
     ("situation-support", "👀", "Situation Support", "coral"),
     ("learning-story", "📔", "Learning Story", "yellow"),
-    ("story-time", "📚", "Story Time", "peach"),
+    ("child-history", "📖", "Child History", "lavender"),
+    ("quick-activity", "⚡", "Quick Activity", "peach"),
+    ("magic-trick", "✨", "Magic Trick", "lavender"),
+    ("weekly-planner", "📅", "Weekly Planner", "blue"),
     ("worksheets", "🖍️", "Worksheets", "green"),
+    ("home-message", "🏠", "Home Message", "green"),
+    ("story-time", "📚", "Story Time", "peach"),
 ]
 
 
@@ -155,7 +174,7 @@ def section_header(icon: str, title: str, anchor_id: str, color_key: str):
         <div style="background:{color};width:46px;height:46px;min-width:46px;border-radius:50%;
                     display:flex;align-items:center;justify-content:center;font-size:22px;
                     box-shadow:0 3px 8px rgba(0,0,0,0.15);">{icon}</div>
-        <div style="font-size:25px;font-weight:700;color:#333;">{title}</div>
+        <div style="font-size:25px;font-weight:700;color:#333;font-family:'Baloo 2',sans-serif;">{title}</div>
     </div>
     '''
 
@@ -174,7 +193,7 @@ def render_sidebar_nav():
         st.markdown(
             '<div style="text-align:center;padding:6px 0 18px 0;">'
             '<span style="font-size:30px;">🌟</span><br>'
-            '<b style="font-size:17px;">EngageKids AI</b></div>',
+            '<b style="font-size:17px;font-family:\'Baloo 2\',sans-serif;">EngageKids AI</b></div>',
             unsafe_allow_html=True,
         )
         for anchor_id, icon, label, color_key in NAV_ITEMS:
