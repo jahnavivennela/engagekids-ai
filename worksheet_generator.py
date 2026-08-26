@@ -70,7 +70,6 @@ AGE_CATEGORIES = {
     "1-2 years": [
         "Big Scribble & Coloring",
         "Point & Match Shapes",
-        "Body Parts Pointing Game",
         "Sensory Play Prompt (for educator)",
     ],
     # 2-3: holds crayon with FINGERS, draws circles/lines; begins to count;
@@ -78,7 +77,6 @@ AGE_CATEGORIES = {
     "2-3 years": [
         "Big Scribble & Coloring",
         "Point & Match Shapes",
-        "Body Parts Pointing Game",
         "Count Together",
         "Shape Matching (Same/Different)",
     ],
@@ -90,8 +88,10 @@ AGE_CATEGORIES = {
         "Shape Matching (Same/Different)",
         "Shapes & Patterns",
         "Odd One Out",
-        "Body Parts Matching",
         "Sensory Play Prompt (for educator)",
+        "Count Together",
+        "Point & Match Shapes",
+        "Themed Story Worksheet",
     ],
     # 4-5 (same combined 3-5 source): "may write some numbers and letters",
     # "copies letters", "counts five to ten things" -> full set including
@@ -104,7 +104,7 @@ AGE_CATEGORIES = {
         "Shapes & Patterns",
         "Odd One Out",
         "Dot to Dot",
-        "Body Parts Matching",
+        "Themed Story Worksheet",
     ],
 }
 
@@ -254,6 +254,7 @@ THEME_DISPLAY = {
 NO_THEME_LABEL = "🎲 No specific theme (variety)"
 
 
+
 def match_theme(theme_text: str):
     """Returns the matching THEME_LIBRARY key for free-text theme input, or
     None if it doesn't match any known category (generic pools are used then)."""
@@ -327,6 +328,7 @@ CATEGORY_DOMAINS = {
     "Odd One Out": "Cognitive",
     "Dot to Dot": "Fine Motor",
     "Body Parts Matching": "Body Awareness",
+    "Themed Story Worksheet": "Multi-Skill",
 }
 
 
@@ -549,6 +551,23 @@ def render_sensory_prompt(avoid_titles, difficulty, age_group, theme_key, avoid_
     return instructions, f'<div class="sensory-list">{rows}</div>', [name for name, _ in picks]
 
 
+def _warn_theme_fallback(raw_theme_text, theme_key, resolved_any):
+    """Shows a warning IN THE APP (not just the terminal) when a typed theme
+    couldn't produce real pictures and the sheet fell back to generic
+    shapes/hearts/hexagons. This is almost always because OPENAI_API_KEY
+    isn't set in .streamlit/secrets.toml — see image_gen.py's
+    _call_image_api, which needs that key for the actual image generation
+    (the Groq key alone only gets you the item NAMES, e.g. "river", "boat",
+    "fish" — not pictures of them)."""
+    if theme_key is None and raw_theme_text and not resolved_any:
+        st.warning(
+            f"Couldn't generate real pictures for the theme \"{raw_theme_text}\" — showing "
+            "generic shapes instead. This usually means OPENAI_API_KEY is missing or invalid "
+            "in .streamlit/secrets.toml (needed by image_gen.py's image generation call). "
+            "Check your terminal for the exact error printed just above this."
+        )
+
+
 def render_coloring(avoid_titles, difficulty, age_group, theme_key, avoid_items, client=None, raw_theme_text=None):
     """Fills the sheet with SEVERAL items to color instead of one small
     centered outline — count and size scale by age so younger children get
@@ -595,6 +614,8 @@ def render_coloring(avoid_titles, difficulty, age_group, theme_key, avoid_items,
             print(f"[render_coloring] dynamic theme image path failed: {e}")
             # falls through to generic shapes below, as before
 
+    _warn_theme_fallback(raw_theme_text, theme_key, bool(items))
+
     if len(items) < n:
         remaining = n - len(items)
         if age_group in ("0-6 months", "6-12 months", "1-2 years", "2-3 years"):
@@ -616,6 +637,89 @@ def render_coloring(avoid_titles, difficulty, age_group, theme_key, avoid_items,
     instructions = "Color me in! Use as many colors as you like."
     used_item_names = [name for name, _ in items]
     return instructions, f'<div class="coloring-grid">{cells}</div>', used_item_names
+
+
+def render_theme_story_sheet(avoid_titles, difficulty, age_group, theme_key, avoid_items, client=None, raw_theme_text=None):
+    """A single worksheet with several short, picture-only sections instead
+    of one activity type — count, match, color, draw. No reading/writing
+    required, so it works for children who can't yet write the theme word.
+    Works for ANY theme (built-in or freely typed) because every picture
+    comes through get_visual_for_item / pick_themed_items, same as
+    render_coloring — no per-theme content is hardcoded here."""
+    SIZE_BY_AGE = {"1-2 years": 90, "2-3 years": 80, "3-4 years": 70, "4-5 years": 60}
+    size = SIZE_BY_AGE.get(age_group, 70)
+    used_all = []
+
+    # gather enough distinct themed items for count + match + color sections
+    # (3 for counting, 2 for matching pairs, 3 for coloring) — falls back to
+    # the dynamic AI-image theme path, then generic shapes, exactly like
+    # render_coloring does, so an unrecognized typed theme still works.
+    items = pick_themed_items(theme_key, avoid_items, 8)
+    if len(items) < 8 and raw_theme_text and client and age_group not in ("0-6 months", "6-12 months", "1-2 years"):
+        try:
+            from image_gen import get_or_generate_dynamic_theme
+            dynamic_items = get_or_generate_dynamic_theme(client, raw_theme_text, age_group, n=8)
+            for name, path in dynamic_items:
+                if path and name not in {n for n, _ in items}:
+                    items.append((name, None))  # image comes from cache via get_visual_for_item below
+        except Exception as e:
+            print(f"[render_theme_story_sheet] dynamic theme image path failed: {e}")
+
+    _warn_theme_fallback(raw_theme_text, theme_key, bool(items))
+
+    if len(items) < 8:
+        pool = {k: SHAPE_PATHS[k].format(c="none") for k in ALL_SHAPES}
+        used_names = {name for name, _ in items}
+        pool = {k: v for k, v in pool.items() if k not in used_names}
+        picks = pick_generic_shapes(avoid_titles, avoid_items, 8 - len(items), pool)
+        items.extend((name, pool[name]) for name in picks)
+
+    def pic(idx, colored=False):
+        name, inner = items[idx % len(items)]
+        return name, get_visual_for_item(theme_key, name, inner or "", size, colored=colored, color=random.choice(COLORS))
+
+    sections = []
+
+    # 1. Count section
+    count_rows = []
+    for i in range(2):
+        name, visual = pic(i, colored=True)
+        count = random.randint(2, 4)
+        icons = "".join(get_visual_for_item(theme_key, name, items[i % len(items)][1] or "", size, colored=True, color=random.choice(COLORS)) for _ in range(count))
+        options = sorted({count, max(1, count - 1), count + 1})
+        options_html = "".join(f'<div class="number-bubble">{n}</div>' for n in options)
+        count_rows.append(f'<div class="count-row"><div class="icons">{icons}</div><div class="number-options">{options_html}</div></div>')
+    sections.append(('1. Count and Circle', '<div class="grid">' + "".join(count_rows) + '</div>', 'Count the pictures in each row, then circle the correct number.'))
+    used_all.extend([items[0][0], items[1][0]])
+
+    # 2. Match section (same/different pairs)
+    match_rows = []
+    for i in range(2, 4):
+        name, visual_a = pic(i, colored=True)
+        same = random.random() > 0.5
+        _, visual_b = pic(i, colored=True) if same else pic(i + 4, colored=True)
+        match_rows.append(f'<div class="match-row"><div class="cell">{visual_a}</div><div class="cell">{visual_b}</div><div class="answer-circle">SAME&nbsp;&nbsp;&nbsp;DIFFERENT</div></div>')
+    sections.append(('2. Same or Different?', '<div class="grid">' + "".join(match_rows) + '</div>', 'Look at each pair. Circle SAME if they match, or DIFFERENT if they don\u2019t.'))
+    used_all.extend([items[2][0], items[3][0]])
+
+    # 3. Color section
+    color_cells = ""
+    for i in range(4, 7):
+        name, visual = pic(i)
+        color_cells += f'<div class="coloring-cell"><div class="coloring-cell-svg">{visual}</div><div class="coloring-cell-label">{name}</div></div>'
+    sections.append(('3. Color the Pictures', f'<div class="coloring-grid">{color_cells}</div>', 'Color each picture in.'))
+    used_all.extend([items[4][0], items[5][0], items[6][0]])
+
+    # 4. Draw-your-own section
+    sections.append(('4. Draw Your Own', '<div class="coloring-box"><div class="blank-box" style="width:220px;height:220px;font-size:60px;">?</div></div>', 'Draw and color your own picture in the box.'))
+
+    body = "".join(
+        f'<div class="section"><div class="section-title">{title}</div>'
+        f'<div class="instructions" style="font-size:16px;margin-bottom:14px;">{instr}</div>{html}</div>'
+        for title, html, instr in sections
+    )
+    instructions = "Work through each part below with your grown-up or educator."
+    return instructions, body, used_all
 
 
 def render_point_match(avoid_titles, difficulty, age_group, theme_key, avoid_items):
@@ -830,6 +934,7 @@ CATEGORY_RENDERERS = {
     "Odd One Out": render_odd_one_out,
     "Dot to Dot": render_dot_to_dot,
     "Body Parts Matching": render_body_parts,
+    "Themed Story Worksheet": render_theme_story_sheet,
 }
 
 CATEGORY_TITLES = {
@@ -847,6 +952,7 @@ CATEGORY_TITLES = {
     "Odd One Out": "Spot the Difference",
     "Dot to Dot": "Dot to Dot",
     "Body Parts Matching": "Match the Body Parts",
+    "Themed Story Worksheet": "Let's Explore Together",
 }
 
 SENSORY_ITEMS = [
@@ -949,7 +1055,7 @@ def generate_worksheet(client, age_group: str, category: str, theme: str, avoid_
     # render_coloring and render_sensory_prompt also accept client/raw theme
     # text directly, as a second path — harmless if theme_key is already
     # resolved above (ensure_dynamic_theme is cached, so this is a no-op).
-    if renderer in (render_coloring, render_sensory_prompt):
+    if renderer in (render_coloring, render_sensory_prompt, render_theme_story_sheet):
         instructions, body_html, used_items = renderer(
             avoid_topics, difficulty, age_group, theme_key, avoid_items or [],
             client=client, raw_theme_text=theme,
@@ -1006,6 +1112,9 @@ h1 { color: #FF6B6B; text-align: center; font-size: 38px; margin-bottom: 6px; }
 .legend-row { display: flex; align-items: center; gap: 10px; font-size: 18px; }
 .legend-num { width: 26px; height: 26px; border-radius: 50%; background: #333; color: white; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; }
 .legend-dot { width: 22px; height: 22px; border-radius: 50%; }
+.section { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 2px dashed #eee; }
+.section:last-child { border-bottom: none; }
+.section-title { font-size: 22px; font-weight: bold; color: #4D96FF; margin-bottom: 4px; }
 @media print { body { background: white; } .sheet { width: auto; } }
 """
 
@@ -1080,6 +1189,11 @@ def worksheet_tab(client):
     regen_key = f"ws_regen_seed_{age_group}_{week_key}"
     seed_offset = st.session_state.get(regen_key, 0)
     target_categories = get_categories_for_week(week_index, age_group, n=2, seed_offset=seed_offset)
+    # Guaranteed weekly inclusion — not left to compete for one of the 2
+    # rotation slots above, since the whole point is it shows up every
+    # single week (just with a different theme each time), not "some weeks".
+    if "Themed Story Worksheet" in AGE_CATEGORIES[age_group] and "Themed Story Worksheet" not in target_categories:
+        target_categories = target_categories + ["Themed Story Worksheet"]
     existing = [existing_by_cat[c] for c in target_categories if c in existing_by_cat]
     missing_categories = [c for c in target_categories if c not in existing_by_cat]
 
@@ -1092,13 +1206,10 @@ def worksheet_tab(client):
     def _generate_categories(categories):
         feedback_text = get_latest_feedback(age_group)
         avoid_topics = get_recent_titles(age_group, lookback_weeks=8)
-        # Was: THEME_DISPLAY.get(theme_key, "") — that only knows the 9
-        # built-in themes, so a typed theme like "trees" silently became ""
-        # here and never reached generate_worksheet at all. Pass the actual
-        # typed text through instead; generate_worksheet already knows how
-        # to handle both a matched built-in theme and a fresh typed one.
-        theme_arg = theme_input
         for cat in categories:
+            # Themed Story Worksheet uses the same manually-typed theme as
+            # every other category now — no separate auto-rotation.
+            theme_arg = theme_input
             avoid_items = get_recent_used_items(age_group, cat, lookback_weeks=8)
             ws = generate_worksheet(client, age_group, cat, theme_arg, avoid_topics, feedback_text, avoid_items)
             save_worksheet(week_key, age_group, cat, ws["title"], ws["html"], source="auto", used_items=ws["used_items"])
@@ -1117,6 +1228,8 @@ def worksheet_tab(client):
             st.session_state[regen_key] = seed_offset + 1
             with st.spinner("Generating something different..."):
                 new_targets = get_categories_for_week(week_index, age_group, n=2, seed_offset=seed_offset + 1)
+                if "Themed Story Worksheet" in AGE_CATEGORIES[age_group] and "Themed Story Worksheet" not in new_targets:
+                    new_targets = new_targets + ["Themed Story Worksheet"]
                 _generate_categories(new_targets)
             st.rerun()
 

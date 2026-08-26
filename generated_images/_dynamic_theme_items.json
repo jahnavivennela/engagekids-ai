@@ -1,4 +1,14 @@
 {
   "trees": [],
-  "school": []
+  "school": [],
+  "seasons": [],
+  "river": [],
+  "birds": [],
+  "vehicles": [
+    "Red firetruck",
+    "Yellow school bus",
+    "Blue"
+  ],
+  "flowers": [],
+  "water": []
 }
