@@ -227,6 +227,26 @@ Developmental milestones for this age (ground every suggestion in these, don't i
 
 {task_line}
 
+STEP 1 — READINESS CHECK (do this silently before writing anything):
+Compare the requested skill ("{skill}") against the milestones above. Decide whether a child in the
+{age_group} band has the physical/cognitive building blocks the skill depends on (grip, sitting
+balance, standing balance, bilateral coordination, following instructions, etc. — whatever the
+milestones show for this band).
+
+- If the skill is realistic for this age (matches or is only slightly above the milestones), write the
+  plan normally per STEP 2 below.
+- If the skill is CLEARLY out of reach for this age (e.g. dressing/buttoning/zipping tasks for a child
+  who the milestones show is still developing basic grasp or sitting balance), do NOT invent a "simplified"
+  version that pretends this is achievable right now. Instead:
+    - ADAPTED_TASK must plainly say this specific skill isn't developmentally appropriate yet at this
+      age, and name the real building block the milestones show they're working on instead.
+    - RELATED_GAME must be a game that builds toward that real building block (grounded in the
+      milestones for this band) — not a scaled-down version of the original skill.
+    - SENSORY_PRESKILL stays as the core foundational activity for this age, same as always.
+  Never describe the originally requested skill as something to practice directly if it's out of reach —
+  redirect entirely to the age-appropriate precursor.
+
+STEP 2 — WRITE THE PLAN:
 Use PLAIN, warm, practical language an educator or parent can act on immediately — no clinical or
 therapy language. Each should be do-able with ordinary household or classroom items only. Keep EACH
 section to 2 short sentences maximum — this is a quick activity card, not an essay.
@@ -234,10 +254,12 @@ section to 2 short sentences maximum — this is a quick activity card, not an e
 Respond in EXACTLY this format, nothing else:
 
 ADAPTED_TASK: A simplified or easier version of the real task itself, so the child can succeed at an
-easier version before the full skill. Max 2 sentences.
+easier version before the full skill — OR, if out of reach per the readiness check above, a plain
+explanation of why plus the real building block to focus on instead. Max 2 sentences.
 
 RELATED_GAME: A playful game or activity that builds the same underlying motion or muscle group as
-the real task, without it feeling like practice. Max 2 sentences.
+the real task (or the redirected building block, if out of reach), without it feeling like practice.
+Max 2 sentences.
 
 SENSORY_PRESKILL: A sensory or grip/coordination-building activity for a child not yet ready to
 attempt the task at all — the foundational skill underneath it. Max 2 sentences.
