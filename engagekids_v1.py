@@ -7,6 +7,7 @@ from worksheet_generator import worksheet_tab, get_week_key
 from ui_theme import apply_theme, section_header, section_anchor
 from milestones_data import AGE_BANDS, milestones_summary_text, AGE_BAND_SOURCE
 from independence_skills import init_independence_table, independence_skills_tab
+from eylf_knowledge import extract_eylf_text, chunk_by_section, retrieve_relevant_chunks, format_for_prompt
 import re
 from activity_db import (
     init_activity_tables, save_quick_activity, get_recent_quick_activity_names,
@@ -24,6 +25,15 @@ client = Groq(api_key=api_key)
 init_db()
 init_activity_tables()
 init_independence_table()
+
+
+# Load + chunk the EYLF PDF once per app session (not on every button click).
+@st.cache_resource
+def load_eylf_chunks():
+    pages = extract_eylf_text()
+    return chunk_by_section(pages)
+
+EYLF_CHUNKS = load_eylf_chunks()
 
 # Page config
 st.set_page_config(
@@ -472,7 +482,8 @@ SAFETY: <one short line, or 'None needed'>"""
 # PAGE: WEEKLY PROGRAM PLANNER
 # 15 experiences: 5 tied to the theme, 10 general covering distinct
 # curriculum streams (one stream each), grounded in the milestones for
-# the selected age band.
+# the selected age band. Now also grounded in the relevant EYLF sections
+# and EngageKids inclusion guidelines, retrieved based on the theme/age.
 # ==========================================
 
 def page_weekly_planner():
@@ -484,6 +495,17 @@ def page_weekly_planner():
 
         week_theme = st.text_input("🌈 Theme for this week")
         age_for_plan = st.selectbox("🎂 Age group for weekly plan", AGE_BANDS, key="weekly_age_group")
+
+        # Optional free-text note lets an educator flag anything relevant for
+        # inclusion (e.g. a child with limited verbal communication, sensory
+        # sensitivities) so the retrieval below can pull the right EYLF +
+        # inclusion sections. Leave blank and it still retrieves general
+        # equity/inclusion grounding by default.
+        weekly_inclusion_notes = st.text_input(
+            "🧩 Anything to consider for inclusion this week? (optional)",
+            placeholder="e.g. one child has limited verbal communication, another prefers quieter spaces",
+            key="weekly_inclusion_notes",
+        )
 
         def _sensory_stream_guidance(age_group: str) -> str:
             """Babies mouth everything and can't be trusted with loose/open sensory
@@ -510,12 +532,24 @@ def page_weekly_planner():
                 avoid_text = ("Experiences already used in the last ~3 months for this age group — do NOT "
                               "repeat any of these, use genuinely different ones: " + "; ".join(recent_names)) if recent_names else ""
 
+                # Retrieve relevant EYLF sections + inclusion guidelines based on
+                # the theme, age group, and any inclusion notes the educator gave.
+                inclusion_context_text = f"{week_theme} {age_for_plan} {weekly_inclusion_notes}"
+                retrieved = retrieve_relevant_chunks(
+                    inclusion_context_text, EYLF_CHUNKS, "knowledge/inclusion_guidelines.txt"
+                )
+                inclusion_block = format_for_prompt(retrieved)
+
                 plan_prompt = f"""Create exactly 15 short early-childhood learning experiences for {age_for_plan}.
 Theme for the week: {week_theme if week_theme else 'no specific theme — keep all 15 general'}
 
 Developmental milestones for this age (base every experience on these, don't invent unrelated skills):
 {milestones_summary_text(age_for_plan)}
 {_sensory_stream_guidance(age_for_plan)}
+
+{inclusion_block}
+
+{f"Specific inclusion considerations for this group: {weekly_inclusion_notes}" if weekly_inclusion_notes else ""}
 
 {avoid_text}
 
@@ -525,13 +559,16 @@ Requirements:
   one experience per stream, in this order: {", ".join(STREAMS)}.
 - For each of the 15, give: a short name, which stream or theme-link it covers, materials (keep minimal),
   1-2 sentences on how to run it, the TOP 2 EYLF (Version 2.0) learning outcomes linked to that experience
-  (short form, e.g. "Outcome 1: Identity", "Outcome 4: Learning"), and a one-line "Use:" statement on the
-  purpose/benefit of that activity for the child's development. Keep every entry short — this is a planning
-  list, not a full lesson plan.
+  (short form, e.g. "Outcome 1: Identity", "Outcome 4: Learning"), a one-line "Use:" statement on the
+  purpose/benefit of that activity for the child's development, and a one-line "Inclusion:" note on how
+  the experience can be adapted so every child in the group can participate (drawing on the EYLF and
+  inclusion guidance provided above). Keep every entry short — this is a planning list, not a full lesson
+  plan.
 - Number 1-5 as "Theme" experiences and 6-15 as the 10 stream experiences, clearly labelled.
 - Format each entry's extra fields on their own short lines, e.g.:
   EYLF Outcomes: <outcome 1> | <outcome 2>
   Use: <one sentence>
+  Inclusion: <one sentence>
 
 FIRST, before anything else, output one line listing just the 15 experience names, separated by " | ",
 in this exact format (nothing else on that line):
@@ -542,7 +579,7 @@ Then on the next line put "---" alone, then the full formatted plan below that."
                 plan_message = client.chat.completions.create(
                     model="openai/gpt-oss-120b",
                     messages=[
-                        {"role": "system", "content": "You are an expert early childhood educator specialising in curriculum planning aligned to EYLF Version 2.0 Australia, grounded strictly in the developmental milestones provided."},
+                        {"role": "system", "content": "You are an expert early childhood educator specialising in curriculum planning aligned to EYLF Version 2.0 Australia, grounded strictly in the developmental milestones provided. You always ensure experiences are genuinely accessible to children with diverse abilities, communication styles, sensory needs, and cultural backgrounds, following the EYLF and inclusion guidance given to you."},
                         {"role": "user", "content": plan_prompt},
                     ],
                     max_tokens=3000,
