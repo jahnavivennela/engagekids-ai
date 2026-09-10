@@ -1,0 +1,4 @@
+project_id = "tnnlzrsmblgetmdkbyaj"
+
+[functions.ai-generate]
+verify_jwt = true
